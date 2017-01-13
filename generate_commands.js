@@ -1,4 +1,4 @@
-var http = require("http"),
+var https = require("https"),
     fs = require("fs");
 
 function prettyCurrentTime() {
@@ -22,7 +22,7 @@ function write_file(commands, path) {
     fs.writeFile(path, file_contents);
 }
 
-http.get({host: "redis.io", path: "/commands.json"}, function (res) {
+https.get({host: "redis.io", path: "/commands.json"}, function (res) {
     var body = "";
 
     console.log("Response from redis.io/commands.json: " + res.statusCode);
