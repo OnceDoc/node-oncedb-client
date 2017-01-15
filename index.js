@@ -641,6 +641,30 @@ function reply_to_strings(reply) {
     return reply;
 }
 
+/*
+object key
+hash value1
+hash value2
+...
+*/
+function reply_map_to_object(recoards, fields) {
+  if (recoards.length % (fields.length + 1) != 0) {
+    cb && cb(new Error('ERR wrong reply number'));
+    return
+  }
+
+  var results = [];
+  for (var i = 0; i < recoards.length; i = i + fields.length + 1) {
+    var object = { _key: recoards[i] };
+    for (var j = 0; j < fields.length; j++) {
+      object[fields[j]] = recoards[i + j + 1];
+    }
+    results.push(object);
+  }
+
+  return results;
+}
+
 RedisClient.prototype.return_reply = function (reply) {
     var command_obj, len, type, timestamp, argindex, args, queue_len;
 
@@ -1080,6 +1104,113 @@ RedisClient.prototype.hmset = function (args, callback) {
     return this.send_command("hmset", args, callback);
 };
 RedisClient.prototype.HMSET = RedisClient.prototype.hmset;
+
+/*
+hserach [keypattern] [field] [operator] [value]
+*/
+var replaceKey = function(obj, key, tar) {
+  if (obj[key]) {
+    obj[tar] = obj[key];
+    delete obj[key];
+  }
+}
+
+RedisClient.prototype.HSEARCH = function(keyPattern, conditions, cb) {
+  var args = [ keyPattern ];
+
+  var fields = Object.keys(conditions);
+  for (var i = 0; i < fields.length; i++) {
+    var field = fields[i];
+    var value = conditions[field];
+    var type  = typeof value;
+
+    if (type == 'object') {
+      replaceKey(value, '$gt', '>');
+      replaceKey(value, '$lt', '<');
+
+      var operators = Object.keys(value);
+      for (var j = 0; j < operators.length; j++) {
+        var operator = operators[j];
+        args.push(field, operator, value[operator]);
+      }
+    } else {
+      args.push(field, '=', value);
+    }
+  }
+
+  var callback = function(err, recoards) {
+    if (err) {
+      cb && cb(err);
+      return
+    }
+
+    var results = reply_map_to_object(recoards, fields)
+
+    cb && cb(null, results)
+  }
+
+  return this.send_command('hsearch', args, callback);
+};
+RedisClient.prototype.hsearch = RedisClient.prototype.HSEARCH;
+
+RedisClient.prototype.HSELECT = function(fields, keys, cb) {
+  var callback = function(err, recoards) {
+    if (err) {
+      cb && cb(err);
+      return
+    }
+
+    var results = reply_map_to_object(recoards, fields);
+
+    cb && cb(null, results);
+  }
+
+  var args = [ fields.length ].concat(fields, keys);
+
+  return this.send_command('hselect', args, callback);
+};
+RedisClient.prototype.hselect = RedisClient.prototype.HSELECT;
+
+RedisClient.prototype.HMGETALL = function(args, cb) {
+  var callback = function(err, recoards) {
+    if (err) {
+      cb && cb(err);
+      return
+    }
+
+    var results = []
+
+    for (var i = 0; i < recoards.length;) {
+      var obj = { _key: recoards[i] }
+      var j = 1
+      while(1) {
+        var key = recoards[i + j]
+        var val = recoards[i + j + 1]
+
+        j+=2;
+
+        if (key != null && val != null) {
+          obj[key] = val
+        } else {
+          break;
+        }
+      }
+      i = i + j
+      results.push(obj)
+    }
+
+    cb && cb(null, results)
+  }
+
+  if (typeof args == 'string') {
+    var args = arraySlice.call(arguments)
+    cb = args.pop()
+  }
+
+  this.send_command('hmgetall', args, callback);
+}
+RedisClient.prototype.hmgetall = RedisClient.prototype.HMGETALL;
+
 
 Multi.prototype.hmset = function () {
     var args = to_array(arguments), tmp_args;
